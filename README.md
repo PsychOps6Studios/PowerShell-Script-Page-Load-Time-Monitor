@@ -16,3 +16,7 @@ Logs to CSV for easy analysis
 Error handling for failed requests
 
 Tracks response size
+
+
+Run it with required parameters, for example:
+.\PageLoadTimeMonitor.ps1 -Urls "https://example.com","https://google.com" -Interval 30 -Duration 120
