@@ -1,0 +1,125 @@
+<#
+.SYNOPSIS
+    Measures and logs webpage load times for monitoring purposes.
+.DESCRIPTION
+    This script measures how long it takes to load specified webpages and logs the results
+    to a CSV file for analysis. It can test multiple URLs and run continuously or for a set duration.
+.PARAMETER Urls
+    The webpages to monitor (comma-separated list or array).
+.PARAMETER LogPath
+    The path where the log file will be saved (defaults to PageLoadTimes.csv in current directory).
+.PARAMETER Interval
+    How often to test each page in seconds (default: 60).
+.PARAMETER Duration
+    How long to run the monitoring in minutes (0 means run indefinitely, default: 0).
+.PARAMETER Timeout
+    Maximum time to wait for a page to load in seconds (default: 30).
+.EXAMPLE
+    .\PageLoadTimeMonitor.ps1 -Urls "https://example.com","https://google.com" -Interval 30 -Duration 120
+.NOTES
+    Version: 1.0
+    Author: Your Name
+    Date: $(Get-Date -Format "yyyy-MM-dd")
+#>
+
+param (
+    [Parameter(Mandatory=$true)]
+    [string[]]$Urls,
+    
+    [string]$LogPath = "PageLoadTimes.csv",
+    
+    [int]$Interval = 60,
+    
+    [int]$Duration = 0,
+    
+    [int]$Timeout = 30
+)
+
+# Initialize the log file if it doesn't exist
+if (-not (Test-Path $LogPath)) {
+    $headers = "Timestamp,URL,LoadTime(ms),Status,Size(bytes)"
+    $headers | Out-File -FilePath $LogPath -Encoding UTF8
+}
+
+# Function to measure page load time
+function Measure-PageLoad {
+    param (
+        [string]$Url
+    )
+    
+    try {
+        # Create a stopwatch to measure time
+        $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        
+        # Use WebRequest to measure load time
+        $request = [System.Net.WebRequest]::Create($Url)
+        $request.Timeout = $Timeout * 1000 # Convert to milliseconds
+        
+        # Get response and read content to ensure full page load
+        $response = $request.GetResponse()
+        $stream = $response.GetResponseStream()
+        $reader = New-Object System.IO.StreamReader($stream)
+        $content = $reader.ReadToEnd()
+        $reader.Close()
+        $stream.Close()
+        $response.Close()
+        
+        $stopwatch.Stop()
+        
+        # Return results
+        return @{
+            LoadTime = $stopwatch.ElapsedMilliseconds
+            Status = "Success"
+            Size = $content.Length
+        }
+    }
+    catch {
+        $stopwatch.Stop()
+        
+        # Return error information
+        return @{
+            LoadTime = $stopwatch.ElapsedMilliseconds
+            Status = "Error: $($_.Exception.Message)"
+            Size = 0
+        }
+    }
+}
+
+# Calculate end time if duration is specified
+if ($Duration -gt 0) {
+    $endTime = (Get-Date).AddMinutes($Duration)
+}
+
+Write-Host "Starting Page Load Time Monitor..."
+Write-Host "Logging to: $LogPath"
+Write-Host "Press Ctrl+C to stop monitoring..."
+
+# Main monitoring loop
+try {
+    do {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        
+        foreach ($url in $Urls) {
+            Write-Host "Testing $url..."
+            
+            $result = Measure-PageLoad -Url $url
+            
+            # Prepare log entry
+            $logEntry = "$timestamp,$url,$($result.LoadTime),$($result.Status),$($result.Size)"
+            
+            # Write to log file
+            $logEntry | Out-File -FilePath $LogPath -Encoding UTF8 -Append
+            
+            # Display results
+            Write-Host "  Load Time: $($result.LoadTime) ms | Status: $($result.Status)"
+        }
+        
+        # Wait for the specified interval (unless we're at or past end time)
+        if ($Duration -eq 0 -or (Get-Date) -lt $endTime) {
+            Start-Sleep -Seconds $Interval
+        }
+    } while ($Duration -eq 0 -or (Get-Date) -lt $endTime)
+}
+finally {
+    Write-Host "Monitoring completed. Results saved to $LogPath"
+}
